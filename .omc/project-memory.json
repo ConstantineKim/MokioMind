@@ -1,0 +1,96 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1787478099300,
+  "projectRoot": "/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master",
+  "techStack": {
+    "languages": [
+      {
+        "name": "Python",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "pyproject.toml"
+        ]
+      }
+    ],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": "pytest",
+    "lintCommand": "ruff check",
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [],
+    "gitBranches": {
+      "defaultBranch": "master",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "dataset": {
+      "path": "dataset",
+      "purpose": null,
+      "fileCount": 2,
+      "lastAccessed": 1787478099289,
+      "keyFiles": [
+        "__init__.py",
+        "lm_dataset.py"
+      ]
+    },
+    "model": {
+      "path": "model",
+      "purpose": null,
+      "fileCount": 5,
+      "lastAccessed": 1787478099289,
+      "keyFiles": [
+        "MokioModel.py",
+        "__init__.py",
+        "model_lora.py",
+        "tokenizer.json",
+        "tokenizer_config.json"
+      ]
+    },
+    "torch_methods": {
+      "path": "torch_methods",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1787478099289,
+      "keyFiles": [
+        "Dropout_d.py",
+        "Linear_d.py",
+        "arange_d.py",
+        "cat_d.py",
+        "outer_d.py"
+      ]
+    },
+    "trainer": {
+      "path": "trainer",
+      "purpose": null,
+      "fileCount": 7,
+      "lastAccessed": 1787478099290,
+      "keyFiles": [
+        "train_dpo.py",
+        "train_full_sft.py",
+        "train_grpo.py",
+        "train_lora.py",
+        "train_ppo.py"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}
