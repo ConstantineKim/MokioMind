@@ -25,6 +25,7 @@
 - Python 语法基础不足：解释项目代码时要先拆开 Python 语法（变量、赋值、切片、函数调用、缩进块等），不假设能直接读懂表达式。
 - 记录门槛：用户仍在追问或只说“大概理解”时，不把该知识点写入“已掌握”；先保留为待确认/待巩固。只有用户明确确认理解，或通过简短复述检查后，才记录为已掌握。教学方法和用户偏好本身可立即记录。
 - 易混淆知识的记录方式：答疑完成并确认掌握后，优先用简单图形、表格、空间关系、对齐图或流程图作为学习日志中的记忆锚点；大段文字只保留必要的白话解释，避免阅读疲劳和后续遗忘。对于人为约定的机制，记录时要明确标注“这是工程设计规则”，并与模型通过训练学到的内容分开。
+- 对照 MokioMind 真实代码时：必须指出具体文件和行号，并提供可点击的绝对路径链接；先解释简化实验，再说明它在项目训练循环中的对应位置。
 
 ## 环境与版本
 
@@ -198,6 +199,31 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
 - 理解 PyTorch 默认会累积梯度：如果第二次 `backward()` 前不清空，第二轮梯度会叠加到第一轮，影响下一次参数更新。
 - 能手算单参数更新：`w=1.0`、`w.grad=-4`、`lr=0.1` 时，`w_new = 1.0 - 0.1 × (-4) = 1.4`。
 - 能区分参数与输出：`optimizer.step()` 修改的是模型内部参数，不是已经算出来的 `logits`；下一次前向传播会用新参数重新生成 logits。
+
+### 梯度累积：本次已确认掌握（2026-09-28）
+
+- `accumulation_steps=2` 时，第 1 个小批次只执行 `backward()`，不会更新参数；第 2 个小批次的梯度累积完成后，才执行一次参数更新。
+- 两次 `backward()` 之间不能 `zero_grad()`，因为 PyTorch 默认会把新梯度加到旧梯度上；中间清空就无法累积两个小批次。
+- 每个小批次的 `loss` 除以 `accumulation_steps`，使累积后的梯度近似两个小批次梯度的平均值。不除时，梯度通常约为 2 倍，等价于把有效学习率放大，可能导致更新过猛。
+- 训练代码中的精确对应关系：
+  - [trainer/train_pretrain.py:63](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:63)：`loss = loss / args.accumulation_steps`
+  - [trainer/train_pretrain.py:65](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:65)：`backward()` 写入梯度，不改参数
+  - [trainer/train_pretrain.py:67](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:67)：累积到指定次数才进入更新分支
+  - [trainer/train_pretrain.py:76](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:76)：`scaler.step(optimizer)` 执行真实参数更新（混合精度包装下的 `optimizer.step()`）
+  - [trainer/train_pretrain.py:79](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:79)：更新后清空梯度
+
+#### 梯度累积记忆锚点
+
+```text
+小批次 A: loss/2 -> backward() ─┐
+                                ├─ 梯度相加 -> step() -> 参数更新一次
+小批次 B: loss/2 -> backward() ─┘                    -> zero_grad()
+```
+
+```text
+没有除以 2：     gA + gB       -> 更新约 2 倍大
+除以 2：         gA/2 + gB/2   -> 等于两个小批次梯度的平均
+```
 
 #### 三动作记忆锚点
 
