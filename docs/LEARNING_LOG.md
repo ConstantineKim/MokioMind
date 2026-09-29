@@ -211,6 +211,9 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
   - [trainer/train_pretrain.py:67](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:67)：累积到指定次数才进入更新分支
   - [trainer/train_pretrain.py:76](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:76)：`scaler.step(optimizer)` 执行真实参数更新（混合精度包装下的 `optimizer.step()`）
   - [trainer/train_pretrain.py:79](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:79)：更新后清空梯度
+- 第 5 课验收：`step=3` 时余数为 1，所以只做 `backward()`；5 个小批次按当前条件更新 2 次（第 2、4 批），第 5 批的梯度会留在参数的 `.grad` 中，但不会由当前 epoch 末尾自动触发 `step()`。
+- 这个取余判断的作用是控制更新时机，不改变小批次形状；它把“每批更新”变成“累积若干批后更新一次”。
+- 真实代码的 epoch 边界位于 [trainer/train_pretrain.py:332](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:332)。当前循环在 [trainer/train_pretrain.py:67](/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master/trainer/train_pretrain.py:67) 只按整组触发更新，因此最后不足一组时不会自动补一次 `step()`；这是当前实现的边界行为，暂不修改。
 
 #### 梯度累积记忆锚点
 
