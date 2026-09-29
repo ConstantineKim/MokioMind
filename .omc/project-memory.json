@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "lastScanned": 1787478099300,
+  "lastScanned": 1790677663467,
   "projectRoot": "/Users/mrwong/Documents/Program/AI/Minimind/eg/MokioMind-master",
   "techStack": {
     "languages": [
@@ -33,7 +33,9 @@
   "structure": {
     "isMonorepo": false,
     "workspaces": [],
-    "mainDirectories": [],
+    "mainDirectories": [
+      "docs"
+    ],
     "gitBranches": {
       "defaultBranch": "master",
       "branchingStrategy": null
@@ -45,17 +47,26 @@
       "path": "dataset",
       "purpose": null,
       "fileCount": 2,
-      "lastAccessed": 1787478099289,
+      "lastAccessed": 1790677663453,
       "keyFiles": [
         "__init__.py",
         "lm_dataset.py"
+      ]
+    },
+    "docs": {
+      "path": "docs",
+      "purpose": "Documentation",
+      "fileCount": 1,
+      "lastAccessed": 1790677663453,
+      "keyFiles": [
+        "LEARNING_LOG.md"
       ]
     },
     "model": {
       "path": "model",
       "purpose": null,
       "fileCount": 5,
-      "lastAccessed": 1787478099289,
+      "lastAccessed": 1790677663454,
       "keyFiles": [
         "MokioModel.py",
         "__init__.py",
@@ -64,11 +75,24 @@
         "tokenizer_config.json"
       ]
     },
+    "notebooks": {
+      "path": "notebooks",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1790677663454,
+      "keyFiles": [
+        "01_logits_and_training.ipynb",
+        "02_gradients_from_loss.ipynb",
+        "03_optimizer_step_and_zero_grad.ipynb",
+        "04_gradient_accumulation.ipynb",
+        "05_update_boundary.ipynb"
+      ]
+    },
     "torch_methods": {
       "path": "torch_methods",
       "purpose": null,
       "fileCount": 9,
-      "lastAccessed": 1787478099289,
+      "lastAccessed": 1790677663455,
       "keyFiles": [
         "Dropout_d.py",
         "Linear_d.py",
@@ -81,7 +105,7 @@
       "path": "trainer",
       "purpose": null,
       "fileCount": 7,
-      "lastAccessed": 1787478099290,
+      "lastAccessed": 1790677663455,
       "keyFiles": [
         "train_dpo.py",
         "train_full_sft.py",
@@ -91,6 +115,31 @@
       ]
     }
   },
-  "hotPaths": [],
+  "hotPaths": [
+    {
+      "path": "docs/LEARNING_LOG.md",
+      "accessCount": 6,
+      "lastAccessed": 1790679333623,
+      "type": "file"
+    },
+    {
+      "path": "notebooks/09_learning_rate_schedule.ipynb",
+      "accessCount": 1,
+      "lastAccessed": 1790678917764,
+      "type": "file"
+    },
+    {
+      "path": "trainer/train_pretrain.py",
+      "accessCount": 1,
+      "lastAccessed": 1790678924551,
+      "type": "file"
+    },
+    {
+      "path": "trainer/trainer_utils.py",
+      "accessCount": 1,
+      "lastAccessed": 1790678924849,
+      "type": "file"
+    }
+  ],
   "userDirectives": []
 }
