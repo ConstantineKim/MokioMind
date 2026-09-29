@@ -1,6 +1,6 @@
 # MiniMind 学习记录
 
-最后更新：2026-08-31
+最后更新：2026-09-29
 
 ## 学习目标
 
@@ -52,7 +52,31 @@
 - 实例按量计费。每次云端实验结束后应在 AutoDL 控制台点击“关机”，不要点击“释放”。
 - 正常关机后当前实例的 `/root/autodl-tmp` 通常保留；释放实例或换一台新实例时不会自动迁移，因此 GitHub 是跨实例的主备份。
 
-## 已完成
+### Notebook 本地备份
+
+- 云端 Notebook：`/root/autodl-tmp/MokioMind/01_logits_and_training.ipynb`
+- 本地分支：`learning-notes`
+- 已提交：`48bbf38 Add logits learning notebook`，其父提交为 `125dc2d`。
+- 本地提交包含 Notebook 与 `.omc/project-memory.json`；当前工作区干净。
+
+## 术语白话表
+
+- **token**：模型处理文字时切出的最小片段，不一定等于一个汉字或英文单词。
+- **token id**：每个 token 在词表中的数字编号。
+- **input_ids**：一条文本转换得到的一串 token id，是模型真正接收的数字输入。
+- **labels**：训练时用于判定模型预测是否正确的目标答案。
+- **pretrain / 预训练**：用大量原始文本，让模型反复练习“根据前文预测下一个 token”。
+- **SFT / 有监督微调**：用“问题和标准回答”训练，让模型更会遵循指令和回答问题。
+- **assistant**：对话数据中模型要学习模仿的回答方；user 是提问方，system 是规则或背景方。
+- **loss / 损失**：模型预测与目标答案之间的差距，训练目标是让它逐渐变小。
+- **gradient / 梯度**：告诉参数应该往哪个方向调整，才能让 loss 下降的信号。
+- **logits**：模型针对下一个位置的全部候选 token 给出的原始分数；分数越高，模型越倾向该 token。训练时 loss 推动正确 token 的 logit 相对更高；推理时 temperature 调节 logits 的差距。logits 不是概率。
+- **候选编号与分数**：`target=0` 中的 0 是第 0 个候选的编号；`logits=[5,1,0]` 中的 0 是第 2 个候选的分数。
+- **PAD（补齐）**：为让同一批文本长度一致而添加的空位 token；由 attention mask 和 `-100` 在模型计算中忽略。
+- **`-100`**：PyTorch 交叉熵损失中的忽略标记；该位置不计入 loss。
+- **optimizer / 优化器**：掌管“怎么根据梯度改参数”的对象。它保存一份参数清单（`optimizer.param_groups`），拿着梯度和学习率算出每个参数改多少，在 `step()` 时执行修改。梯度只表示坡度，真正改参数的是优化器；本项目用的是 AdamW。
+
+## 一、2026-08-31：logits、loss 与参数更新
 
 ### 云端环境验证
 
@@ -112,6 +136,18 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
 - 能解释 next-token prediction：完整句子同时作为输入来源和标准答案来源，计算 loss 时整体错开一位；训练时答案已知，推理时模型逐 token 生成并使用自己的输出。
 - 能通过图示理解 `shift_logits` 与 `shift_labels` 的对齐目的：保留可预测位置与对应的下一个 token。
 - 已用三维示意理解张量形状：`torch.zeros((2, 4, 10))` 可看作 2 张表，每张表 4 行、每行 10 个数字；通用读法是 `(批量中的样本数, 每条样本的位置数, 每个位置的候选数)`。因此模型 logits 的 `(2, 12, 128)` 可读为 2 条文本、每条 12 个位置、每个位置对 128 个候选 token 打分。这里的“张量”先按可批量计算的数字容器理解。
+- 已能说明 PAD 的三个必要处理：`input_ids` 用 PAD 补齐 batch 内长度；labels 中的 PAD 改为 `-100`，使其不参与 loss；`attention_mask` 中的 PAD 改为 `0`，使注意力机制忽略这些占位位置。能够区分 `-100`（控制是否计入 loss）与 `0`（控制注意力是否关注）。
+- 已能按步骤解释 `PretrainDataset.__getitem__` 的核心代码：tokenizer 将文本转换为 token id；加 BOS/EOS 并用 PAD 补齐得到 `input_ids`；复制 `input_ids` 得到独立的 `labels`，后续可将 PAD 改为 `-100` 而不影响输入。
+- 已澄清 `__getitem__(index)` 的返回含义：`index` 只选择一条样本；`return input_ids, labels, attention_mask` 返回的是这条样本的三个字段，不是三条样本。后续 `DataLoader` 才会把多条样本分别堆叠成 batch。
+- 已能用形状解释输入与输出的区别：`input_ids` 是 `(4, 12)` 的 token 编号表；`logits` 是 `(4, 12, 128)`，因为每个位置都包含 128 个候选 token 的分数。`labels` 与 `attention_mask` 通常和 `input_ids` 形状相同。
+- 已理解 `vocab_size` 会决定 logits 的最后一维：每个位置对词表中的每个 token 输出一个分数。但需牢记它必须与 tokenizer 词表匹配；变大意味着候选集合更大，不等于模型必然更聪明，还会增加输出层计算和参数成本。
+- 已澄清词表大小关系：通常 `model.vocab_size == len(tokenizer)`，而不是简单要求小于或等于。若模型词表小于 tokenizer，较大的 token id 会导致 embedding/索引越界；若模型词表大于 tokenizer，通常可运行但多出的候选没有对应 token，属于浪费并可能造成配置不一致。
+- 已复习 shift 对齐：`shift_logits = logits[:, :-1, :]` 去掉最后一个“预测位置”（它要预测序列结束后的内容，故没有答案）；`shift_labels = labels[:, 1:]` 去掉 BOS。对齐后，模型在输入位置 `t` 输出的 logits 与真实的下一个 token `labels[t+1]` 比较。注意 logits 是该位置的一整排候选分数，不是 token 本身。
+- 已澄清：`labels` 中的值本来就是 tokenizer 的 token id，不是另一套额外编号；由于 token id 被设计为 `0` 到 `vocab_size-1` 的整数，它同时也是 logits 候选维度的数组下标。例如 token id 3 代表某个具体 token，loss 会读取 logits 的第 3 列。`-100` 是特殊忽略标记，不是 token id。
+- 已掌握 logits 与 label 的精确配对：`logits[样本][位置]` 是该位置的一整排候选分数，`labels[样本][位置]` 是由 tokenizer 给出的正确下一个 token id；该 id 同时定位 logits 的对应列。交叉熵不只判断正确项是否最高，而是按正确 token 的相对概率连续计分；训练通过降低 loss 推动正确 token 的分数相对升高，通常使其成为最高分。
+- 已进一步澄清接口规则：token id 被人为设计为 `0..vocab_size-1` 的整数，并约定 logits 最后一维按同样顺序排列候选分数。因此若正确 token id 是 5566，loss 就读取 `shift_logits[样本, 位置, 5566]`；这是 tokenizer、模型输出层和 loss 之间预先约定的映射规则。训练真正学到的是给定上下文时各候选分数的相对大小，不是学习这个下标规则。
+- 已理解单条样本的结构：`(input_ids, labels, attention_mask)` 是一个包含三个字段的元组；示例中每个 `torch.tensor([..])` 都是一维、长度为 3 的张量，单条样本三个字段的形状都是 `(3,)`。`torch.tensor([...])` 会按列表中的实际数字创建内容；全 0 张量应使用 `torch.zeros(...)`，不能把未填写值理解成自动全 0。
+- 已能说明 `torch.tensor([0, 10, 11])`：先有普通 Python 列表 `[0, 10, 11]`，再转换为 PyTorch 张量；内容仍是这 3 个数字，形状为 `(3,)`，转换的目的是使用 PyTorch 的批量计算和模型接口。
 
 #### 三维张量的空间记忆锚点
 
@@ -134,30 +170,7 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
 
 因此模型 logits 的 `(2, 12, 128)` 仍按同一空间关系理解：两张表、每张 12 行、每行 128 个候选分数。
 
-### 仍需巩固
-
-- Python 基础语法：列表、切片（`[:-1]`、`[1:]`）、循环、函数调用和变量赋值。
-- PyTorch 张量的维度、索引写法和 `clone()`；目前先理解用途，不要求记忆内部实现细节。
-- `PretrainDataset.__getitem__` 如何把真实 JSON 文本加工成三项返回值。
-- 已能说明 PAD 的三个必要处理：`input_ids` 用 PAD 补齐 batch 内长度；labels 中的 PAD 改为 `-100`，使其不参与 loss；`attention_mask` 中的 PAD 改为 `0`，使注意力机制忽略这些占位位置。能够区分 `-100`（控制是否计入 loss）与 `0`（控制注意力是否关注）。
-- 已能按步骤解释 `PretrainDataset.__getitem__` 的核心代码：tokenizer 将文本转换为 token id；加 BOS/EOS 并用 PAD 补齐得到 `input_ids`；复制 `input_ids` 得到独立的 `labels`，后续可将 PAD 改为 `-100` 而不影响输入。
-- 已澄清 `__getitem__(index)` 的返回含义：`index` 只选择一条样本；`return input_ids, labels, attention_mask` 返回的是这条样本的三个字段，不是三条样本。后续 `DataLoader` 才会把多条样本分别堆叠成 batch。
-- 能判断 batch 中模型输出 logits 的形状；本次需继续区分输入与输出：`batch_size=4`、序列长度 12 时，`input_ids` 是 `(4, 12)`，词表大小 128 的 `logits` 才是 `(4, 12, 128)`。
-- 已能用形状解释输入与输出的区别：`input_ids` 是 `(4, 12)` 的 token 编号表；`logits` 是 `(4, 12, 128)`，因为每个位置都包含 128 个候选 token 的分数。`labels` 与 `attention_mask` 通常和 `input_ids` 形状相同。
-- 已理解 `vocab_size` 会决定 logits 的最后一维：每个位置对词表中的每个 token 输出一个分数。但需牢记它必须与 tokenizer 词表匹配；变大意味着候选集合更大，不等于模型必然更聪明，还会增加输出层计算和参数成本。
-- 已澄清词表大小关系：通常 `model.vocab_size == len(tokenizer)`，而不是简单要求小于或等于。若模型词表小于 tokenizer，较大的 token id 会导致 embedding/索引越界；若模型词表大于 tokenizer，通常可运行但多出的候选没有对应 token，属于浪费并可能造成配置不一致。
-- 已复习 shift 对齐：`shift_logits = logits[:, :-1, :]` 去掉最后一个“预测位置”（它要预测序列结束后的内容，故没有答案）；`shift_labels = labels[:, 1:]` 去掉 BOS。对齐后，模型在输入位置 `t` 输出的 logits 与真实的下一个 token `labels[t+1]` 比较。注意 logits 是该位置的一整排候选分数，不是 token 本身。
-- 需特别巩固候选编号与分数位置的对应：`label=3` 是候选编号，不是分数；在 Python 从 0 开始编号的列表 `[0.1, 0.2, 0.3, 2.5, 0.4]` 中，编号 3 对应第 4 个元素 `2.5`。交叉熵据此从整排 logits 中取出正确候选的分数进行比较。
-- 已澄清：`labels` 中的值本来就是 tokenizer 的 token id，不是另一套额外编号；由于 token id 被设计为 `0` 到 `vocab_size-1` 的整数，它同时也是 logits 候选维度的数组下标。例如 token id 3 代表某个具体 token，loss 会读取 logits 的第 3 列。`-100` 是特殊忽略标记，不是 token id。
-- 已掌握 logits 与 label 的精确配对：`logits[样本][位置]` 是该位置的一整排候选分数，`labels[样本][位置]` 是由 tokenizer 给出的正确下一个 token id；该 id 同时定位 logits 的对应列。交叉熵不只判断正确项是否最高，而是按正确 token 的相对概率连续计分；训练通过降低 loss 推动正确 token 的分数相对升高，通常使其成为最高分。
-- 已进一步澄清接口规则：token id 被人为设计为 `0..vocab_size-1` 的整数，并约定 logits 最后一维按同样顺序排列候选分数。因此若正确 token id 是 5566，loss 就读取 `shift_logits[样本, 位置, 5566]`；这是 tokenizer、模型输出层和 loss 之间预先约定的映射规则。训练真正学到的是给定上下文时各候选分数的相对大小，不是学习这个下标规则。
-- 交叉熵的“label 查找正确分数 -> softmax 得到概率 -> `-log(正确概率)`”目前仅为大概理解，尚未确认掌握；后续需要用一个更小的数值例子复核后再升级为已掌握。
-- 用户已确认掌握交叉熵前半段：`label` 是正确 token id，用来定位 logits 的对应列；logits 是一排候选分数；softmax 将整排分数转为概率；再对正确答案概率计算 `-log(x)` 得到该位置的 loss。模型如何通过梯度让正确概率上升仍待学习。
-- 已理解交叉熵的基本计算链：`label` 是正确 token id，用作查表下标；先从整排 logits 取出该下标对应的分数，再对整排 logits 做 softmax 得到概率，最后计算 `loss = -log(正确 token 的概率)`。token id 与分数不是直接相减的两个量；id 只负责定位，分数/概率才参与误差计算。已用表格记忆锚点巩固这一点。
-- 已进一步澄清接口规则：token id 被人为设计为 `0..vocab_size-1` 的整数，并约定 logits 最后一维按同样顺序排列候选分数。因此若正确 token id 是 5566，loss 就读取 `shift_logits[样本, 位置, 5566]`；这是 tokenizer、模型输出层和 loss 之间预先约定的映射规则。训练真正学到的是给定上下文时各候选分数的相对大小，不是学习这个下标规则。
-- 已进一步澄清接口规则：token id 被人为设计为 `0..vocab_size-1` 的整数，并约定 logits 最后一维按同样顺序排列候选分数。因此若正确 token id 是 5566，loss 就读取 `shift_logits[样本, 位置, 5566]`；这是 tokenizer、模型输出层和 loss 之间预先约定的映射规则。训练真正学到的是给定上下文时各候选分数的相对大小，不是学习这个下标规则。
-- 已理解单条样本的结构：`(input_ids, labels, attention_mask)` 是一个包含三个字段的元组；示例中每个 `torch.tensor([..])` 都是一维、长度为 3 的张量，单条样本三个字段的形状都是 `(3,)`。`torch.tensor([...])` 会按列表中的实际数字创建内容；全 0 张量应使用 `torch.zeros(...)`，不能把未填写值理解成自动全 0。
-- 已能说明 `torch.tensor([0, 10, 11])`：先有普通 Python 列表 `[0, 10, 11]`，再转换为 PyTorch 张量；内容仍是这 3 个数字，形状为 `(3,)`，转换的目的是使用 PyTorch 的批量计算和模型接口。
+## 二、2026-09-09：真实样本与交叉熵
 
 ### 本次已确认掌握（2026-09-09）
 
@@ -168,34 +181,10 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
 - 能区分推理和训练：推理通常用 `argmax` 选择概率最高的 token 作为输出；训练不必先选一个 token，而是用 label 计算 loss，再通过梯度更新模型参数，使正确 token 的概率总体提高。
 - 已使用记忆图 `complete-next-token-loss.html` 串起“原文 → 编号 → 对齐 → logits → softmax → loss”的空间关系。
 - 已记住交叉熵对 logits 的梯度结论：`gradient = p - y`，即“模型概率向量减去正确答案的独热目标向量”。正确 token 的分量通常为负，错误候选的分量通常为正，因此梯度下降会提高正确 logit、降低错误 logits。这里的 `p - y` 是 loss 对 logits 的梯度，不是直接存储的模型参数梯度；其完整高数推导仍待巩固。
+- 用户已确认掌握交叉熵前半段：`label` 是正确 token id，用来定位 logits 的对应列；logits 是一排候选分数；softmax 将整排分数转为概率；再对正确答案概率计算 `-log(x)` 得到该位置的 loss。模型如何通过梯度让正确概率上升仍待学习。
+- 已理解交叉熵的基本计算链：`label` 是正确 token id，用作查表下标；先从整排 logits 取出该下标对应的分数，再对整排 logits 做 softmax 得到概率，最后计算 `loss = -log(正确 token 的概率)`。token id 与分数不是直接相减的两个量；id 只负责定位，分数/概率才参与误差计算。已用表格记忆锚点巩固这一点。
 
-### Notebook 本地备份
-
-- 云端 Notebook：`/root/autodl-tmp/MokioMind/01_logits_and_training.ipynb`
-- 本地分支：`learning-notes`
-- 已提交：`48bbf38 Add logits learning notebook`，其父提交为 `125dc2d`。
-- 本地提交包含 Notebook 与 `.omc/project-memory.json`；当前工作区干净。
-
-## 术语白话表
-
-- **token**：模型处理文字时切出的最小片段，不一定等于一个汉字或英文单词。
-- **token id**：每个 token 在词表中的数字编号。
-- **input_ids**：一条文本转换得到的一串 token id，是模型真正接收的数字输入。
-- **labels**：训练时用于判定模型预测是否正确的目标答案。
-- **pretrain / 预训练**：用大量原始文本，让模型反复练习“根据前文预测下一个 token”。
-- **SFT / 有监督微调**：用“问题和标准回答”训练，让模型更会遵循指令和回答问题。
-- **assistant**：对话数据中模型要学习模仿的回答方；user 是提问方，system 是规则或背景方。
-- **loss / 损失**：模型预测与目标答案之间的差距，训练目标是让它逐渐变小。
-- **gradient / 梯度**：告诉参数应该往哪个方向调整，才能让 loss 下降的信号。
-- **logits**：模型针对下一个位置的全部候选 token 给出的原始分数；分数越高，模型越倾向该 token。训练时 loss 推动正确 token 的 logit 相对更高；推理时 temperature 调节 logits 的差距。logits 不是概率。
-- **候选编号与分数**：`target=0` 中的 0 是第 0 个候选的编号；`logits=[5,1,0]` 中的 0 是第 2 个候选的分数。
-- **PAD（补齐）**：为让同一批文本长度一致而添加的空位 token；由 attention mask 和 `-100` 在模型计算中忽略。
-- **`-100`**：PyTorch 交叉熵损失中的忽略标记；该位置不计入 loss。
-- **optimizer / 优化器**：掌管“怎么根据梯度改参数”的对象。它保存一份参数清单（`optimizer.param_groups`），拿着梯度和学习率算出每个参数改多少，在 `step()` 时执行修改。梯度只表示坡度，真正改参数的是优化器；本项目用的是 AdamW。
-
-## 下次学习
-
-继续学习真实训练循环中的梯度累积：为什么项目不会每个小批次都执行 `optimizer.step()`，以及 `accumulation_steps` 如何影响更新时机；仍使用本地极小实验，不启动远程 GPU。
+## 三、2026-09-28：三动作与梯度累积
 
 ### 本次已确认掌握（2026-09-28）
 
@@ -249,6 +238,8 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
 坡度便条：  grad     ──step()──>  被读取
 旧便条：    grad     ──zero_grad()──> 清空
 ```
+
+## 四、2026-09-29：梯度裁剪、浮点与优化器
 
 ### 梯度裁剪：当前答疑澄清（2026-09-29）
 
@@ -331,3 +322,16 @@ BOS id 为 1，EOS id 为 2，PAD id 为 0。PAD 在 labels 中改为 `-100`，�
   - 参数这一步增加多少 —— 绝对量，`0.04`。
   - 这一增量相对学习率 0.1 时怎么变 —— 相对量，`0.4 → 0.04`，缩到 `1/10`。
 - 正负号由梯度决定，学习率不改变方向，只改变大小；这与第 07 课“正比例只改变大小，不改变正负方向”是同一条规则。
+
+## 仍需巩固
+
+- Python 基础语法：列表、切片（`[:-1]`、`[1:]`）、循环、函数调用和变量赋值。
+- PyTorch 张量的维度、索引写法和 `clone()`；目前先理解用途，不要求记忆内部实现细节。
+- `PretrainDataset.__getitem__` 如何把真实 JSON 文本加工成三项返回值。
+- 能判断 batch 中模型输出 logits 的形状；本次需继续区分输入与输出：`batch_size=4`、序列长度 12 时，`input_ids` 是 `(4, 12)`，词表大小 128 的 `logits` 才是 `(4, 12, 128)`。
+- 需特别巩固候选编号与分数位置的对应：`label=3` 是候选编号，不是分数；在 Python 从 0 开始编号的列表 `[0.1, 0.2, 0.3, 2.5, 0.4]` 中，编号 3 对应第 4 个元素 `2.5`。交叉熵据此从整排 logits 中取出正确候选的分数进行比较。
+- 交叉熵的“label 查找正确分数 -> softmax 得到概率 -> `-log(正确概率)`”目前仅为大概理解，尚未确认掌握；后续需要用一个更小的数值例子复核后再升级为已掌握。
+
+## 下一步
+
+- 09 学习率调度已完成（2026-09-29）。下一课待定。
